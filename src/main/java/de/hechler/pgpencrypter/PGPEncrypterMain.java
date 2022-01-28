@@ -34,8 +34,8 @@ import org.pgpainless.util.Passphrase;
  */
 public class PGPEncrypterMain {
 
-	private final static String DEFAULT_PRIVATE_KEY = "./testdata/keys/encryptit.key";
-	private final static String DEFAULT_PUBLIC_KEY = "./testdata/keys/encryptit.pub";
+	private final static String DEFAULT_PRIVATE_KEY = "./testdata/keys/encryptittest.key";
+	private final static String DEFAULT_PUBLIC_KEY = "./testdata/keys/encryptittest.pub";
 	private final static String DEFAULT_INPUT_FILE_UNENCRYPTED = "./testdata/input/testdatei.txt";
 	private final static String DEFAULT_INPUT_FILE_ENCRYPTED = "./testdata/input/testdatei.txt.pgp";
 	private final static String DEFAULT_OUTPUT_FOLDER = "./testdata/output";

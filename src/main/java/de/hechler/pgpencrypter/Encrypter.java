@@ -41,10 +41,12 @@ public class Encrypter {
 
 	public void encrypt(Path inputFilename, Path outputFilename) {
 		try {
-			InputStream in = new FileInputStream(inputFilename.toFile());
-			OutputStream out = new FileOutputStream(outputFilename.toFile());
-			encrypt(in, out);
-		} catch (FileNotFoundException e) {
+			try (InputStream in = new FileInputStream(inputFilename.toFile())) {
+				try (OutputStream out = new FileOutputStream(outputFilename.toFile())) {
+					encrypt(in, out);
+				}
+			}
+		} catch (Exception e) {
 			throw new RuntimeException(e.toString(), e);
 		}
 		
