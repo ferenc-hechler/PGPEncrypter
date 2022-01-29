@@ -1,7 +1,6 @@
 package de.hechler.pgpencrypter;
 
 import java.io.FileInputStream;
-import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -14,7 +13,6 @@ import org.bouncycastle.openpgp.PGPPublicKeyRing;
 import org.bouncycastle.util.io.Streams;
 import org.pgpainless.PGPainless;
 import org.pgpainless.encryption_signing.EncryptionOptions;
-import org.pgpainless.encryption_signing.EncryptionResult;
 import org.pgpainless.encryption_signing.EncryptionStream;
 import org.pgpainless.encryption_signing.ProducerOptions;
 
@@ -70,8 +68,8 @@ public class Encrypter {
 	        encryptionStream.close();
 	
 	        // Information about the encryption (algorithms, detached signatures etc.)
-	        EncryptionResult result = encryptionStream.getResult();
-	        System.out.println(result.getEncryptionAlgorithm());
+//	        EncryptionResult result = encryptionStream.getResult();
+//	        System.out.println(result.getEncryptionAlgorithm());
 		} catch (IOException | PGPException e) {
 			throw new RuntimeException(e.toString(), e);
 		}
