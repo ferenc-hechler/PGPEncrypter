@@ -5,6 +5,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
+import de.hechler.pgpencrypter.Encrypter.EncryptResult;
 import de.hechler.pgpencrypter.FileChangesCollector.FileInfo;
 
 
@@ -58,8 +59,8 @@ public class PGPEncrypterMain {
 				Path sourceFile = fi.file;
             	Path targetFile = targetFolder.resolve(sourceFolder.relativize(sourceFile.resolveSibling(fi.file.getFileName() + ".pgp")));
             	Files.createDirectories(targetFile.getParent());
-        		enc.encrypt(sourceFile, targetFile);
-        		System.out.println("ENCRYPTED: "+targetFile);
+        		EncryptResult encryptResult = enc.encrypt(sourceFile, targetFile);
+        		System.out.println("ENCRYPTED: "+targetFile+"  SHA-256(source):"+encryptResult.sourceSHA256+"  SHA-256(target):"+encryptResult.targetSHA256);
 			}
 			System.out.println("EncryptIt finished");
 		} catch (IOException e) {
