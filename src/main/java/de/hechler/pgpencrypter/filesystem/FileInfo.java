@@ -26,6 +26,13 @@ public class FileInfo {
 		this.targetHash = targetHash;
 	}
 
+	public static FileInfo createCopy(FileInfo other) {
+		if (other == null) {
+			return null;
+		}
+		return new FileInfo(other.file, other.lastEventTimestamp, other.lastModifiedTimestamp, other.fileSize, other.sourceHash, other.targetHash);
+	}
+
 	public static String headerCSV() {
 		Serializer ser = new Serializer();
 		headerCSV(ser);
@@ -88,5 +95,6 @@ public class FileInfo {
 				+ lastModifiedTimestamp + ", fileSize=" + fileSize + ", sourceHash=" + sourceHash + ", targetHash="
 				+ targetHash + "]";
 	}
+
 
 }
