@@ -1,7 +1,10 @@
 package de.hechler.pgpencrypter;
 
+import java.io.BufferedReader;
 import java.io.FileInputStream;
 import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -17,6 +20,7 @@ import de.hechler.pgpencrypter.encrypt.Encrypter.EncryptResult;
 import de.hechler.pgpencrypter.filesystem.FileChangesCollector;
 import de.hechler.pgpencrypter.filesystem.FileInfo;
 import de.hechler.pgpencrypter.filesystem.FolderWatcher;
+import de.hechler.pgpencrypter.persist.Deserializer;
 
 
 
@@ -35,26 +39,83 @@ public class SyncEncrypted {
 	private Path publicKey;
 	private Path inputFolder;
 	private Path outputFolder;
-	
+	private Path syncCacheCSVFile;
 
 	private Map<Path, FileInfo> syncedFiles;
-
+	private long lastChanged;
+	private long lastSaved;
 	
-	public SyncEncrypted(String publicKeyFilename, String inputFoldername, String outputfoldername) {
-		this(Paths.get(publicKeyFilename), Paths.get(inputFoldername), Paths.get(outputfoldername));
+	public SyncEncrypted(String publicKeyFilename, String inputFoldername, String outputfoldername, String syncCacheCSVFilename) {
+		this(Paths.get(publicKeyFilename), Paths.get(inputFoldername), Paths.get(outputfoldername), Paths.get(syncCacheCSVFilename));
 	}
 
-	public SyncEncrypted(Path publicKey, Path inputFolder, Path outputFolder) {
+	public SyncEncrypted(Path publicKey, Path inputFolder, Path outputFolder, Path syncCacheCSVFile) {
 		this.publicKey = publicKey;
 		this.inputFolder = inputFolder;
 		this.outputFolder = outputFolder;
+		this.syncCacheCSVFile = syncCacheCSVFile;
 		this.syncedFiles = new LinkedHashMap<>();
+		this.lastSaved = 0;
+		this.lastChanged = 0;
+	}
+	
+	public boolean readCache() {
+		lastSaved = System.currentTimeMillis();
+		syncedFiles = new LinkedHashMap<>();
+		if (!Files.exists(syncCacheCSVFile)) {
+			return true;
+		}
+		
+		try (Deserializer deser = new Deserializer(new BufferedReader(new InputStreamReader(new FileInputStream(syncCacheCSVFile.toFile()), StandardCharsets.UTF_8)))) {
+			deser.nextRecord(); // skip header
+			while (true) {
+				FileInfo fileInfo = FileInfo.fromCSV(deser);
+				if (fileInfo == null) {
+					break;
+				}
+				syncedFiles.put(fileInfo.file, fileInfo);
+			}
+			return true;
+		} 
+		catch (IOException e) {
+			System.err.println("Error reading synced files cache: "+e.toString());
+			return false;
+		}		
+	}
+	
+	public boolean saveCache() {
+		if (lastSaved >= lastChanged) {
+			return true;
+		}
+		try {
+			System.out.println("writing to '"+syncCacheCSVFile+"'");
+			long now = System.currentTimeMillis();
+			if (Files.exists(syncCacheCSVFile)) {
+				Path backupFile = syncCacheCSVFile.resolveSibling(syncCacheCSVFile.getFileName().toString()+"_BAK");
+				Files.move(syncCacheCSVFile, backupFile, StandardCopyOption.REPLACE_EXISTING);
+			}
+			try (PrintStream out = new PrintStream(syncCacheCSVFile.toFile(), StandardCharsets.UTF_8.toString())) {
+				out.println(FileInfo.headerCSV());
+				syncedFiles.values().forEach(fi -> out.println(fi.toCSV()));
+			} 
+			lastSaved = now;
+			return true;
+		}
+		catch (IOException e) {
+			System.err.println("Error writing synced files cache: "+e.toString());
+			return false;
+		}
 	}
 	
 	public void startSync() {
 		try {
 			Files.createDirectories(inputFolder);
 			Files.createDirectories(outputFolder);
+			if (syncCacheCSVFile.getParent() != null) {
+				Files.createDirectories(syncCacheCSVFile.getParent());
+			}
+			readCache();
+			System.out.println("synced files cache entries: "+syncedFiles.size());
 			Encrypter enc = new Encrypter(publicKey);
 			FileChangesCollector collector = new FileChangesCollector();
 			FolderWatcher fw = new FolderWatcher(inputFolder, collector);
@@ -106,6 +167,8 @@ public class SyncEncrypted {
     			existingFI.fileSize = encryptResult.sourceFilesize;
     			existingFI.sourceHash = encryptResult.sourceSHA256;
     			existingFI.targetHash = encryptResult.targetSHA256;
+    			lastChanged = System.currentTimeMillis();
+    			saveCache();
 			}
 			System.out.println("EncryptIt finished");
 		} catch (IOException e) {
@@ -114,8 +177,9 @@ public class SyncEncrypted {
 	}
 
 	private void removeOutdatedTargetFile(Path oldTargetFile) throws IOException {
-		Files.deleteIfExists(oldTargetFile);
-		System.out.println("REMOVED "+oldTargetFile.toString());
+		if (Files.deleteIfExists(oldTargetFile)) {
+			System.out.println("REMOVED "+oldTargetFile.toString());
+		}
 	}
 
 	private void renameTargetFileHash(FileInfo currentFI, FileInfo existingFI, Path expectedTargetFile, EncryptResult encResult) throws IOException {
