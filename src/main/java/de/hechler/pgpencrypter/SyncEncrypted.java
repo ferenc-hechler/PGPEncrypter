@@ -8,9 +8,10 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 import de.hechler.pgpencrypter.Encrypter.EncryptResult;
-import de.hechler.pgpencrypter.FileChangesCollector.FileInfo;
 
 
 
@@ -27,6 +28,9 @@ public class SyncEncrypted {
 	private Path publicKey;
 	private Path inputFolder;
 	private Path outputFolder;
+
+	private Map<Path, FileInfo> syncedFiles;
+
 	
 	public SyncEncrypted(String publicKeyFilename, String inputFoldername, String outputfoldername) {
 		this(Paths.get(publicKeyFilename), Paths.get(inputFoldername), Paths.get(outputfoldername));
@@ -36,6 +40,7 @@ public class SyncEncrypted {
 		this.publicKey = publicKey;
 		this.inputFolder = inputFolder;
 		this.outputFolder = outputFolder;
+		this.syncedFiles = new LinkedHashMap<>();
 	}
 	
 	public void startSync() {
@@ -51,29 +56,70 @@ public class SyncEncrypted {
 				if (fi == null) {
 					break;
 				}
+				long now = System.currentTimeMillis();
 				Path sourceFile = fi.file;
-				String hash = calcShortHash(calcSHA256(sourceFile));
+            	Path relSource = inputFolder.relativize(sourceFile);
+				FileInfo existingFI = syncedFiles.get(relSource);
+				String sourceSHA256 = calcSHA256(sourceFile);
+				String shortHash = calcShortHash(sourceSHA256);
 				String targetFilename = sourceFile.getFileName().toString();
 				int dotPos = targetFilename.lastIndexOf('.');
 				if (dotPos == -1) {
-					targetFilename = targetFilename+"-"+hash+".pgp";
+					targetFilename = targetFilename+"-"+shortHash+".pgp";
 				}
 				else {
-					targetFilename = targetFilename.substring(0, dotPos)+"-"+hash+targetFilename.substring(dotPos)+".pgp";
+					targetFilename = targetFilename.substring(0, dotPos)+"-"+shortHash+targetFilename.substring(dotPos)+".pgp";
 				}
             	Path targetFile = outputFolder.resolve(inputFolder.relativize(sourceFile.resolveSibling(targetFilename)));
+            	if (existingFI != null) {
+            		if (existingFI.sourceHash.equalsIgnoreCase(sourceSHA256)) {
+            			// TODO: verify in filesystem / remote
+            			System.out.println("NO CHANGES IN "+relSource);
+            			continue;
+            		}
+            	}
+            	
             	Files.createDirectories(targetFile.getParent());
         		EncryptResult encryptResult = enc.encrypt(sourceFile, targetFile);
         		System.out.println("ENCRYPTED: "+targetFile+"  SHA-256(source):"+encryptResult.sourceSHA256+"  SHA-256(target):"+encryptResult.targetSHA256);
-        		
+        		if (existingFI == null) {
+        			existingFI = new FileInfo(relSource, now, -1, -1, null, null);
+        			syncedFiles.put(relSource, existingFI);
+        		}
+        		else {
+        			String oldSourceHash = existingFI.sourceHash;
+    				String oldShortHash = calcShortHash(oldSourceHash);
+    				String oldTargetFilename = calcHashedFilename(relSource.getFileName().toString(), oldShortHash); 
+                	Path oldTargetFile = outputFolder.resolve(inputFolder.relativize(sourceFile.resolveSibling(oldTargetFilename)));
+                	Files.deleteIfExists(oldTargetFile);
+                	System.out.println("REMOVED "+oldTargetFile.toString());
+        		}
+    			long lastModified = Files.getLastModifiedTime(sourceFile).toMillis();
+    			long fileSize = Files.size(sourceFile);
+    			existingFI.lastEventTimestamp = now;
+    			existingFI.lastModifiedTimestamp = lastModified;
+    			existingFI.fileSize = fileSize;
+    			existingFI.sourceHash = encryptResult.sourceSHA256;
+    			existingFI.targetHash = encryptResult.targetSHA256;
 			}
 			System.out.println("EncryptIt finished");
 		} catch (IOException e) {
 			throw new RuntimeException(e.toString(), e);
 		} 
-			
 	}
 
+	private String calcHashedFilename(String sourceFilename, String shortHash) {
+		String result = sourceFilename;
+		int dotPos = result.lastIndexOf('.');
+		if (dotPos == -1) {
+			result = result+"-"+shortHash+".pgp";
+		}
+		else {
+			result = result.substring(0, dotPos)+"-"+shortHash+result.substring(dotPos)+".pgp";
+		}
+		return result;
+	}
+	
 	private String calcSHA256(Path file) {
 		try {
 			MessageDigest md = MessageDigest.getInstance("SHA-256");

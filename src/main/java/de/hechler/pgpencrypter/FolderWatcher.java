@@ -1,5 +1,6 @@
 package de.hechler.pgpencrypter;
 
+
 import static java.nio.file.StandardWatchEventKinds.ENTRY_CREATE;
 import static java.nio.file.StandardWatchEventKinds.ENTRY_DELETE;
 import static java.nio.file.StandardWatchEventKinds.ENTRY_MODIFY;
@@ -11,7 +12,6 @@ import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.WatchEvent;
 import java.nio.file.WatchKey;
@@ -20,8 +20,6 @@ import java.nio.file.attribute.BasicFileAttributes;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.Executors;
-
-import de.hechler.pgpencrypter.FileChangesCollector.FileInfo;
 
 /**
  * https://docs.oracle.com/javase/tutorial/essential/io/notification.html
@@ -42,7 +40,7 @@ public class FolderWatcher {
 			this.collector = collector;
 			this.wk2folder = new HashMap<>();
 			this.watcher = FileSystems.getDefault().newWatchService();
-			registerAll(sourceFolder);
+			registerAll(this.sourceFolder);
 		} catch (IOException e) {
 			throw new RuntimeException(e.toString(), e);
 		}
