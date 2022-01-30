@@ -7,6 +7,8 @@ import java.nio.file.Paths;
 
 import org.junit.jupiter.api.Test;
 
+import de.hechler.pgpencrypter.encrypt.Encrypter;
+
 class EncrypterTest {
 
 	private static final String TESTDATA_FOLDER = "./testdata"; 
