@@ -6,12 +6,14 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-import de.hechler.pgpencrypter.Encrypter.EncryptResult;
+import de.hechler.pgpencrypter.encrypt.Encrypter;
+import de.hechler.pgpencrypter.encrypt.Encrypter.EncryptResult;
 
 
 
@@ -25,9 +27,12 @@ import de.hechler.pgpencrypter.Encrypter.EncryptResult;
  */
 public class SyncEncrypted {
 
+	private static boolean TRUST_LAST_MODIFIED_TIMESTAMP = true;
+
 	private Path publicKey;
 	private Path inputFolder;
 	private Path outputFolder;
+	
 
 	private Map<Path, FileInfo> syncedFiles;
 
@@ -60,28 +65,25 @@ public class SyncEncrypted {
 				Path sourceFile = fi.file;
             	Path relSource = inputFolder.relativize(sourceFile);
 				FileInfo existingFI = syncedFiles.get(relSource);
+				if (preCheckNoChanges(fi, existingFI)) {
+					continue;
+				}
+    			long lastModified = Files.getLastModifiedTime(sourceFile).toMillis();
+    			long fileSize = Files.size(sourceFile);
 				String sourceSHA256 = calcSHA256(sourceFile);
 				String shortHash = calcShortHash(sourceSHA256);
-				String targetFilename = sourceFile.getFileName().toString();
-				int dotPos = targetFilename.lastIndexOf('.');
-				if (dotPos == -1) {
-					targetFilename = targetFilename+"-"+shortHash+".pgp";
-				}
-				else {
-					targetFilename = targetFilename.substring(0, dotPos)+"-"+shortHash+targetFilename.substring(dotPos)+".pgp";
-				}
+				String targetFilename = calcHashedFilename(sourceFile.getFileName().toString(), shortHash);
             	Path targetFile = outputFolder.resolve(inputFolder.relativize(sourceFile.resolveSibling(targetFilename)));
-            	if (existingFI != null) {
-            		if (existingFI.sourceHash.equalsIgnoreCase(sourceSHA256)) {
-            			// TODO: verify in filesystem / remote
-            			System.out.println("NO CHANGES IN "+relSource);
-            			continue;
-            		}
-            	}
+				if (checkNoLocalChanges(fi, existingFI, sourceSHA256)) {
+					continue;
+				}
             	
             	Files.createDirectories(targetFile.getParent());
         		EncryptResult encryptResult = enc.encrypt(sourceFile, targetFile);
         		System.out.println("ENCRYPTED: "+targetFile+"  SHA-256(source):"+encryptResult.sourceSHA256+"  SHA-256(target):"+encryptResult.targetSHA256);
+        		if (!sourceSHA256.equals(encryptResult.sourceSHA256)) {
+        			renameTargetFileHash(sourceFile, existingFI, targetFile, encryptResult.sourceSHA256);
+        		}
         		if (existingFI == null) {
         			existingFI = new FileInfo(relSource, now, -1, -1, null, null);
         			syncedFiles.put(relSource, existingFI);
@@ -94,8 +96,6 @@ public class SyncEncrypted {
                 	Files.deleteIfExists(oldTargetFile);
                 	System.out.println("REMOVED "+oldTargetFile.toString());
         		}
-    			long lastModified = Files.getLastModifiedTime(sourceFile).toMillis();
-    			long fileSize = Files.size(sourceFile);
     			existingFI.lastEventTimestamp = now;
     			existingFI.lastModifiedTimestamp = lastModified;
     			existingFI.fileSize = fileSize;
@@ -106,6 +106,35 @@ public class SyncEncrypted {
 		} catch (IOException e) {
 			throw new RuntimeException(e.toString(), e);
 		} 
+	}
+
+	private void renameTargetFileHash(Path sourceFile, FileInfo existingFI, Path targetFile, String newSourceSHA256) throws IOException {
+		String newShortHash = calcShortHash(newSourceSHA256);
+		String newTargetFilename = calcHashedFilename(sourceFile.getFileName().toString(), newShortHash);
+		Path newTargetFile = outputFolder.resolve(inputFolder.relativize(sourceFile.resolveSibling(newTargetFilename)));
+		Files.move(targetFile, newTargetFile, StandardCopyOption.REPLACE_EXISTING);
+		if ((existingFI != null) && existingFI.sourceHash.equals(newSourceSHA256)) {
+			// do not remove newly created file, because oldTargetFile matches newTargetFile
+			existingFI.sourceHash = "";
+		}
+	}
+
+	private boolean checkNoLocalChanges(FileInfo fi, FileInfo existingFI, String sourceSHA256) {
+		if (existingFI == null) {
+			return false;
+		}
+		return sourceSHA256.equals(existingFI.sourceHash);
+	}
+
+	private boolean preCheckNoChanges(FileInfo fi, FileInfo existingFI) {
+		if (existingFI != null) {
+			if (fi.fileSize == existingFI.fileSize) {
+				if (TRUST_LAST_MODIFIED_TIMESTAMP && (fi.lastModifiedTimestamp == existingFI.lastModifiedTimestamp)) {
+					return true;
+				}
+			}
+		}
+		return false;
 	}
 
 	private String calcHashedFilename(String sourceFilename, String shortHash) {

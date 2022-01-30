@@ -1,5 +1,6 @@
 package de.hechler.pgpencrypter;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
@@ -39,9 +40,24 @@ public class PGPEncrypterMain {
 		Path publicKey = Paths.get(publicKeyFilename);
 		Path sourceFolder = Paths.get(inputFolder);
 		Path targetFolder = Paths.get(outputFolder);
-		SyncEncrypted sync = new SyncEncrypted(publicKey, sourceFolder, targetFolder);
-		sync.startSync();
-		System.out.println("EncryptIt finished");
+		while (true) {
+			SyncEncrypted sync = new SyncEncrypted(publicKey, sourceFolder, targetFolder);
+			sync.startSync();
+			System.err.println("DISCONNECTED, waiting for folder "+sourceFolder);
+			// MAYBE a good idea to have this outside of Java (restart java program)?
+			while (true) {
+				try {
+					Thread.sleep(60000);
+				} catch (InterruptedException e) {
+					System.out.println("EncryptIt finished");
+					return;
+				}
+				if (Files.isDirectory(sourceFolder)) {
+					break;
+				}
+			}				
+			System.out.println("RECONNECTING");
+		}
 	}
 
 	

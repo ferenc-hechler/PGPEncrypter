@@ -1,4 +1,4 @@
-package de.hechler.pgpencrypter;
+package de.hechler.pgpencrypter.encrypt;
 
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -12,9 +12,13 @@ import org.bouncycastle.openpgp.PGPException;
 import org.bouncycastle.openpgp.PGPPublicKeyRing;
 import org.bouncycastle.util.io.Streams;
 import org.pgpainless.PGPainless;
+import org.pgpainless.algorithm.SymmetricKeyAlgorithm;
 import org.pgpainless.encryption_signing.EncryptionOptions;
 import org.pgpainless.encryption_signing.EncryptionStream;
 import org.pgpainless.encryption_signing.ProducerOptions;
+
+import de.hechler.pgpencrypter.ChecksumInputStream;
+import de.hechler.pgpencrypter.ChecksumOutputStream;
 
 public class Encrypter {
 
@@ -75,8 +79,8 @@ public class Encrypter {
 	                        ProducerOptions.encrypt(
 	                        		new EncryptionOptions()
 	                                        .addRecipient(publicKey)
-	                                        //// optionally override symmetric encryption algorithm
-	                                        //.overrideEncryptionAlgorithm(SymmetricKeyAlgorithm.AES_256)
+	                                        // optionally override symmetric encryption algorithm
+	                                        .overrideEncryptionAlgorithm(SymmetricKeyAlgorithm.AES_256)
 	                        ).setAsciiArmor(true) // Ascii armor or not
 	                );
 	
