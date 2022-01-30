@@ -17,24 +17,30 @@ import org.pgpainless.encryption_signing.EncryptionOptions;
 import org.pgpainless.encryption_signing.EncryptionStream;
 import org.pgpainless.encryption_signing.ProducerOptions;
 
-import de.hechler.pgpencrypter.ChecksumInputStream;
-import de.hechler.pgpencrypter.ChecksumOutputStream;
+import de.hechler.pgpencrypter.utils.ChecksumInputStream;
+import de.hechler.pgpencrypter.utils.ChecksumOutputStream;
 
 public class Encrypter {
 
 	private PGPPublicKeyRing publicKey;
 	
 	public static class EncryptResult {
+		public long sourceFilesize;
 		public String sourceSHA256;
+		public long targetFilesize;
 		public String targetSHA256;
-		public EncryptResult(String sourceSHA256, String targetSHA256) {
+		public EncryptResult(long sourceFilesize, String sourceSHA256, long targetFilesize, String targetSHA256) {
+			this.sourceFilesize = sourceFilesize;
 			this.sourceSHA256 = sourceSHA256;
+			this.targetFilesize = targetFilesize;
 			this.targetSHA256 = targetSHA256;
 		}
 		@Override
 		public String toString() {
-			return "EncryptResult [sourceSHA256=" + sourceSHA256 + ", targetSHA256=" + targetSHA256 + "]";
+			return "EncryptResult [sourceFilesize=" + sourceFilesize + ", sourceSHA256=" + sourceSHA256
+					+ ", targetFilesize=" + targetFilesize + ", targetSHA256=" + targetSHA256 + "]";
 		}
+		
 	}
 	
 	public Encrypter(Path publicKeyFilename) { 
@@ -86,9 +92,11 @@ public class Encrypter {
 	
 	        Streams.pipeAll(cin, encryptionStream);
 	        encryptionStream.close();
+	        long sourceFilesize = cin.getSize();
 	        String sourceSHA256 = cin.getMD();
+	        long targetFilesize = cout.getSize();
 	        String targetSHA256 = cout.getMD();
-	        return new EncryptResult(sourceSHA256, targetSHA256);
+	        return new EncryptResult(sourceFilesize, sourceSHA256, targetFilesize, targetSHA256);
 	        // Information about the encryption (algorithms, detached signatures etc.)
 //	        EncryptionResult result = encryptionStream.getResult();
 //	        System.out.println(result.getEncryptionAlgorithm());

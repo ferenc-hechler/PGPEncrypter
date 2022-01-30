@@ -14,6 +14,9 @@ import java.util.Map;
 
 import de.hechler.pgpencrypter.encrypt.Encrypter;
 import de.hechler.pgpencrypter.encrypt.Encrypter.EncryptResult;
+import de.hechler.pgpencrypter.filesystem.FileChangesCollector;
+import de.hechler.pgpencrypter.filesystem.FileInfo;
+import de.hechler.pgpencrypter.filesystem.FolderWatcher;
 
 
 
@@ -57,48 +60,50 @@ public class SyncEncrypted {
 			FolderWatcher fw = new FolderWatcher(inputFolder, collector);
 			fw.startEventLoop();
 			while (true) {
-				FileInfo fi = collector.getNextChangedFile();
-				if (fi == null) {
+				FileInfo currentFI = collector.getNextChangedFile();
+				if (currentFI == null) {
+					// all watched folders got invalid (folder deleted?)
 					break;
 				}
 				long now = System.currentTimeMillis();
-				Path sourceFile = fi.file;
+				Path sourceFile = currentFI.file;
             	Path relSource = inputFolder.relativize(sourceFile);
 				FileInfo existingFI = syncedFiles.get(relSource);
-				if (preCheckNoChanges(fi, existingFI)) {
+				currentFI.lastEventTimestamp = now;
+				currentFI.fileSize = Files.size(sourceFile);
+				currentFI.lastModifiedTimestamp = Files.getLastModifiedTime(sourceFile).toMillis();
+				currentFI.sourceHash = null;
+				currentFI.targetHash = null;
+				if (preCheckNoChanges(currentFI, existingFI)) {
 					continue;
 				}
-    			long lastModified = Files.getLastModifiedTime(sourceFile).toMillis();
-    			long fileSize = Files.size(sourceFile);
-				String sourceSHA256 = calcSHA256(sourceFile);
-				String shortHash = calcShortHash(sourceSHA256);
+				currentFI.sourceHash = calcSHA256(sourceFile);
+				if (checkNoLocalChanges(currentFI, existingFI)) {
+					continue;
+				}
+				String shortHash = calcShortHash(currentFI.sourceHash, currentFI.fileSize);
 				String targetFilename = calcHashedFilename(sourceFile.getFileName().toString(), shortHash);
-            	Path targetFile = outputFolder.resolve(inputFolder.relativize(sourceFile.resolveSibling(targetFilename)));
-				if (checkNoLocalChanges(fi, existingFI, sourceSHA256)) {
-					continue;
-				}
-            	
+            	Path targetFile = outputFolder.resolve(relSource).resolveSibling(targetFilename);
             	Files.createDirectories(targetFile.getParent());
         		EncryptResult encryptResult = enc.encrypt(sourceFile, targetFile);
-        		System.out.println("ENCRYPTED: "+targetFile+"  SHA-256(source):"+encryptResult.sourceSHA256+"  SHA-256(target):"+encryptResult.targetSHA256);
-        		if (!sourceSHA256.equals(encryptResult.sourceSHA256)) {
-        			renameTargetFileHash(sourceFile, existingFI, targetFile, encryptResult.sourceSHA256);
+        		System.out.println("ENCRYPTED: "+targetFile+"  "+encryptResult);
+        		if ((currentFI.fileSize != encryptResult.sourceFilesize) || (!currentFI.sourceHash.equals(encryptResult.sourceSHA256))) {
+        			System.err.println("Source file '"+sourceFile+"' changed during encryption!");
+        			renameTargetFileHash(currentFI, existingFI, targetFile, encryptResult);
         		}
         		if (existingFI == null) {
         			existingFI = new FileInfo(relSource, now, -1, -1, null, null);
         			syncedFiles.put(relSource, existingFI);
         		}
         		else {
-        			String oldSourceHash = existingFI.sourceHash;
-    				String oldShortHash = calcShortHash(oldSourceHash);
+    				String oldShortHash = calcShortHash(existingFI.sourceHash, existingFI.fileSize);
     				String oldTargetFilename = calcHashedFilename(relSource.getFileName().toString(), oldShortHash); 
-                	Path oldTargetFile = outputFolder.resolve(inputFolder.relativize(sourceFile.resolveSibling(oldTargetFilename)));
-                	Files.deleteIfExists(oldTargetFile);
-                	System.out.println("REMOVED "+oldTargetFile.toString());
+                	Path oldTargetFile = outputFolder.resolve(relSource).resolveSibling(oldTargetFilename);
+                	removeOutdatedTargetFile(oldTargetFile);
         		}
     			existingFI.lastEventTimestamp = now;
-    			existingFI.lastModifiedTimestamp = lastModified;
-    			existingFI.fileSize = fileSize;
+    			existingFI.lastModifiedTimestamp = currentFI.lastModifiedTimestamp;
+    			existingFI.fileSize = encryptResult.sourceFilesize;
     			existingFI.sourceHash = encryptResult.sourceSHA256;
     			existingFI.targetHash = encryptResult.targetSHA256;
 			}
@@ -108,33 +113,34 @@ public class SyncEncrypted {
 		} 
 	}
 
-	private void renameTargetFileHash(Path sourceFile, FileInfo existingFI, Path targetFile, String newSourceSHA256) throws IOException {
-		String newShortHash = calcShortHash(newSourceSHA256);
-		String newTargetFilename = calcHashedFilename(sourceFile.getFileName().toString(), newShortHash);
-		Path newTargetFile = outputFolder.resolve(inputFolder.relativize(sourceFile.resolveSibling(newTargetFilename)));
-		Files.move(targetFile, newTargetFile, StandardCopyOption.REPLACE_EXISTING);
-		if ((existingFI != null) && existingFI.sourceHash.equals(newSourceSHA256)) {
+	private void removeOutdatedTargetFile(Path oldTargetFile) throws IOException {
+		Files.deleteIfExists(oldTargetFile);
+		System.out.println("REMOVED "+oldTargetFile.toString());
+	}
+
+	private void renameTargetFileHash(FileInfo currentFI, FileInfo existingFI, Path expectedTargetFile, EncryptResult encResult) throws IOException {
+		String newShortHash = calcShortHash(encResult.sourceSHA256, encResult.sourceFilesize);
+		String newTargetFilename = calcHashedFilename(currentFI.file.getFileName().toString(), newShortHash);
+		Path newTargetFile = expectedTargetFile.resolveSibling(newTargetFilename);
+		Files.move(expectedTargetFile, newTargetFile, StandardCopyOption.REPLACE_EXISTING);
+		if ((existingFI != null) && existingFI.sourceHash.equals(encResult.sourceSHA256)) {
 			// do not remove newly created file, because oldTargetFile matches newTargetFile
 			existingFI.sourceHash = "";
 		}
 	}
 
-	private boolean checkNoLocalChanges(FileInfo fi, FileInfo existingFI, String sourceSHA256) {
+	private boolean preCheckNoChanges(FileInfo currentFI, FileInfo existingFI) {
+		if ((existingFI == null) || !TRUST_LAST_MODIFIED_TIMESTAMP) {
+			return false;
+		}
+		return (currentFI.fileSize == existingFI.fileSize) && (currentFI.lastModifiedTimestamp == existingFI.lastModifiedTimestamp);
+	}
+
+	private boolean checkNoLocalChanges(FileInfo currentFI, FileInfo existingFI) {
 		if (existingFI == null) {
 			return false;
 		}
-		return sourceSHA256.equals(existingFI.sourceHash);
-	}
-
-	private boolean preCheckNoChanges(FileInfo fi, FileInfo existingFI) {
-		if (existingFI != null) {
-			if (fi.fileSize == existingFI.fileSize) {
-				if (TRUST_LAST_MODIFIED_TIMESTAMP && (fi.lastModifiedTimestamp == existingFI.lastModifiedTimestamp)) {
-					return true;
-				}
-			}
-		}
-		return false;
+		return currentFI.sourceHash.equals(existingFI.sourceHash);
 	}
 
 	private String calcHashedFilename(String sourceFilename, String shortHash) {
@@ -172,8 +178,9 @@ public class SyncEncrypted {
 		}
 	}
 
-	private String calcShortHash(String text) {
-		String result = calcSHA256("SHORT-"+text);
+	private String calcShortHash(String hash, long filesize) {
+		String actualParameters = "calcShortHash(\""+hash+"\","+filesize+")";
+		String result = calcSHA256(actualParameters);
 		return result.substring(0, 8);
 	}
 	

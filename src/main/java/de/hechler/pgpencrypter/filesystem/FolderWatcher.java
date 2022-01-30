@@ -1,4 +1,4 @@
-package de.hechler.pgpencrypter;
+package de.hechler.pgpencrypter.filesystem;
 
 
 import static java.nio.file.StandardWatchEventKinds.ENTRY_CREATE;

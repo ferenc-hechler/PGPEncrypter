@@ -1,6 +1,5 @@
 package de.hechler.pgpencrypter.utils;
 
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.security.MessageDigest;
@@ -11,6 +10,7 @@ public class ChecksumOutputStream extends OutputStream {
 	private OutputStream delegte;
 
 	private MessageDigest md;
+	private long size;
 
 	public ChecksumOutputStream(String algorithm, OutputStream delegte) {
 		this.delegte = delegte;
@@ -19,6 +19,7 @@ public class ChecksumOutputStream extends OutputStream {
 		} catch (NoSuchAlgorithmException e) {
 			throw new RuntimeException(e.toString());
 		}
+		this.size = 0;
 	}
 
 	public String getMD() {
@@ -30,19 +31,26 @@ public class ChecksumOutputStream extends OutputStream {
         return result.toString();
 	}
 	
+	public long getSize() {
+		return size;
+	}
+
 	public void write(int b) throws IOException {
 		delegte.write(b);
 		md.update((byte)b);
+		size += 1;
 	}
 
 	public void write(byte[] b) throws IOException {
 		delegte.write(b);
 		md.update(b);
+		size += b.length;
 	}
 
 	public void write(byte[] b, int off, int len) throws IOException {
 		delegte.write(b, off, len);
 		md.update(b, off, len);
+		size += len;
 	}
 
 	public void flush() throws IOException {
@@ -51,14 +59,6 @@ public class ChecksumOutputStream extends OutputStream {
 
 	public void close() throws IOException {
 		delegte.close();
-	}
-
-	public static void main(String[] args) throws IOException {
-		ByteArrayOutputStream out = new ByteArrayOutputStream();
-		ChecksumOutputStream cout = new ChecksumOutputStream("SHA-256", out);
-		cout.write("TESTTEXT".getBytes());
-		cout.close();
-		System.out.println(cout.getMD());
 	}
 
 }

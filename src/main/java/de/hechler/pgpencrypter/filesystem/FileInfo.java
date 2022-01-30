@@ -1,4 +1,4 @@
-package de.hechler.pgpencrypter;
+package de.hechler.pgpencrypter.filesystem;
 
 import java.nio.file.Path;
 

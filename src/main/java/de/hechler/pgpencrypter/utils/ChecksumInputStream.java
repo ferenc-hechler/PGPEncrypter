@@ -9,6 +9,7 @@ public class ChecksumInputStream extends InputStream {
 	
 	private InputStream delegte;
 	private MessageDigest md;
+	private long size;
 
 	public ChecksumInputStream(String algorithm, InputStream delegte) {
 		this.delegte = delegte;
@@ -17,6 +18,7 @@ public class ChecksumInputStream extends InputStream {
 		} catch (NoSuchAlgorithmException e) {
 			throw new RuntimeException(e.toString());
 		}
+		this.size = 0;
 	}
 
 	public String getMD() {
@@ -27,11 +29,16 @@ public class ChecksumInputStream extends InputStream {
         }
         return result.toString();
 	}
+
+	public long getSize() {
+		return size;
+	}
 	
 	public int read() throws IOException {
 		int result = delegte.read();
 		if (result != -1) {
 			md.update((byte)result);
+			size += 1;
 		}
 		return result;
 	}
@@ -40,6 +47,7 @@ public class ChecksumInputStream extends InputStream {
 		int result = delegte.read(b);
 		if (result > 0) {
 			md.update(b, 0, result);
+			size += result;
 		}
 		return result;
 	}
@@ -48,12 +56,9 @@ public class ChecksumInputStream extends InputStream {
 		int result = delegte.read(b, off, len);
 		if (result > 0) {
 			md.update(b, off, result);
+			size += result;
 		}
 		return result;
-	}
-
-	public long skip(long n) throws IOException {
-		throw new UnsupportedOperationException("skip not allowed in ChecksumInputStream");
 	}
 
 	public int available() throws IOException {
@@ -62,6 +67,10 @@ public class ChecksumInputStream extends InputStream {
 
 	public void close() throws IOException {
 		delegte.close();
+	}
+
+	public long skip(long n) throws IOException {
+		throw new UnsupportedOperationException("skip not allowed in ChecksumInputStream");
 	}
 
 	public void mark(int readlimit) {
