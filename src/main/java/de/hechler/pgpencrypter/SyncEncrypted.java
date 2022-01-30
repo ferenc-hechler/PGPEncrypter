@@ -245,13 +245,14 @@ public class SyncEncrypted {
 		try {
 			MessageDigest md = MessageDigest.getInstance("SHA-256");
 			byte[] buffer = new byte[32768];
-			FileInputStream in = new FileInputStream(file.toFile());
-			while (true) {
-				int cnt = in.read(buffer);
-				if (cnt <= 0) {
-					break;
+			try (FileInputStream in = new FileInputStream(file.toFile())) {
+				while (true) {
+					int cnt = in.read(buffer);
+					if (cnt <= 0) {
+						break;
+					}
+					md.update(buffer, 0, cnt);
 				}
-				md.update(buffer, 0, cnt);
 			}
 			byte[] bytes = md.digest();
 	        StringBuilder result = new StringBuilder();
