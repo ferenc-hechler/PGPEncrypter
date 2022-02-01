@@ -14,7 +14,7 @@ class EncrypterTest {
 	private static final String TESTDATA_FOLDER = "./testdata"; 
 	
 	@Test
-	void testEncryper() throws IOException {
+	void testEncrypter() throws IOException {
 		Path inputFile = Paths.get(TESTDATA_FOLDER).resolve("input/testdatei.txt");
 		Path publicKeyFile = Paths.get(TESTDATA_FOLDER).resolve("keys/encryptittest.pub");
 		Path outputFile = Paths.get(TESTDATA_FOLDER).resolve("output/testdatei.txt.pgp");
