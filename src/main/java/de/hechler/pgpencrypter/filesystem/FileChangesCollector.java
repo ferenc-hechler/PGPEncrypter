@@ -46,17 +46,26 @@ public class FileChangesCollector {
 		System.err.println("TODO: rescanAll() - check all files for changes");
 	}
 
+	
 	public FileInfo getNextChangedFile() {
-		return getNextChangedFile(5000);
+		return getNextChangedFile(-1);
 	}
 
 	
-	public FileInfo getNextChangedFile(long fileUnchangedMS) {
+	public static final FileInfo TIMEOUT_FILEINFO = new FileInfo(null, 0, 0, 0, null, null);
+	
+	private final static long FILE_UNCHANGED_MILLIS = 5000;
+	
+	public FileInfo getNextChangedFile(long timeout) {
+		long timeoutTimeMillis = (timeout == -1) ? Long.MAX_VALUE : System.currentTimeMillis() + timeout;
 		FileInfo result = null;
 		while (result == null) {
 			while (updatedFiles.isEmpty()) {
+				if (timeoutTimeMillis <= System.currentTimeMillis()) {
+					return TIMEOUT_FILEINFO;
+				}
 				try {
-					Thread.sleep(fileUnchangedMS);
+					Thread.sleep(FILE_UNCHANGED_MILLIS);
 				} catch (InterruptedException e) {
 					return null;
 				}
@@ -65,7 +74,7 @@ public class FileChangesCollector {
 				}
 			}
 			long now = System.currentTimeMillis();
-			long maxTime = now-fileUnchangedMS;
+			long maxTime = now-FILE_UNCHANGED_MILLIS;
 			Iterator<Entry<Path, FileInfo>> iterator = updatedFiles.entrySet().iterator();
 			while (iterator.hasNext()) {
 				Entry<Path, FileInfo> entry = iterator.next();
@@ -90,7 +99,7 @@ public class FileChangesCollector {
 			}
 			if (result == null) {
 				try {
-					Thread.sleep(fileUnchangedMS);
+					Thread.sleep(FILE_UNCHANGED_MILLIS);
 				} catch (InterruptedException e) {
 					return null;
 				}

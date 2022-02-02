@@ -33,7 +33,7 @@ import okio.BufferedSink;
 public class PCloudUploader {
 
 	private final static String CONFIG_FILENAME = ".env";
-	private final static String TEMP_UPLOAD_FILENAME = "pclouduploader_file.tmp";
+	private final static String TEMP_UPLOAD_FILENAME = "pclouduploader_file.pgp";
 
 
 	private static PCloudConfig config;
@@ -46,7 +46,7 @@ public class PCloudUploader {
 
 
 	private static ApiClient internApiClient;
-	public static ApiClient getApiClient() {
+	public static synchronized ApiClient getApiClient() {
 		if (internApiClient == null) {
 			internApiClient = PCloudSdk.newClientBuilder()
 					.authenticator(Authenticators.newOAuthAuthenticator(getConfig().getAccessToken()))
@@ -56,7 +56,7 @@ public class PCloudUploader {
 		}
 		return internApiClient;
 	}
-	public static void shutdownApiClient() {
+	public static synchronized void shutdownApiClient() {
 		if (internApiClient == null) {
 			return;
 		}
@@ -65,6 +65,52 @@ public class PCloudUploader {
 	}
 	
 	
+	public static class InputStreamDataSource extends DataSource {
+		private InputStream in;
+		public InputStreamDataSource(InputStream in) {
+			this.in = in;
+		}
+        @Override
+        public long contentLength() {
+            return -1;
+        }
+		@Override
+		public void writeTo(BufferedSink sink) throws IOException {
+			OutputStream out = sink.outputStream();
+			byte[] buf = new byte[4096];
+			int cnt=0;
+			while (true) {
+				cnt = in.read(buf);
+				System.out.println("CNT: "+cnt);
+				if (cnt <= 0) {
+					break;
+				}
+				out.write(buf, 0, cnt);
+			}
+		}
+	}
+	
+	
+	/**
+	 * 
+	 * @param relPath
+	 * @param in
+	 * @return file id or -1 on error
+	 */
+	public long uploadFile(Path localFile, Path cloudPath)  {
+		String filename = cloudPath.getFileName().toString();
+		long result = -1;
+		try {
+			long folderId = recursiveCreateFolder(getApiClient(), cloudPath.getParent());
+			RemoteFile rFile = getApiClient().createFile(folderId, filename, DataSource.create(localFile.toFile()), UploadOptions.OVERRIDE_FILE).execute();
+			result = rFile.fileId();
+        } catch (IOException | ApiError e) {
+        	e.printStackTrace();
+            System.err.println("Error upload file '"+cloudPath+"': "+e.toString());
+        }
+        return result;
+	}
+
 	/**
 	 * 
 	 * @param relPath
@@ -78,8 +124,10 @@ public class PCloudUploader {
 		try {
 			File tempFile = in2tempFile(in);
 			long folderId = recursiveCreateFolder(apiClient, relPath.getParent());
-			RemoteFile rFile = apiClient.createFile(rPath(relPath.getParent()), filename, DataSource.create(tempFile), UploadOptions.OVERRIDE_FILE).execute();
-//			RemoteFile rFile = apiClient.createFile(folderId, filename, DataSource.create(tempFile), UploadOptions.OVERRIDE_FILE).execute();
+			
+//			RemoteFile rFile = apiClient.createFile(folderId, filename, new InputStreamDataSource(in), UploadOptions.OVERRIDE_FILE).execute();
+//			RemoteFile rFile = apiClient.createFile(rPath(relPath.getParent()), filename, DataSource.create(tempFile), UploadOptions.OVERRIDE_FILE).execute();
+			RemoteFile rFile = apiClient.createFile(folderId, filename, DataSource.create(tempFile), UploadOptions.OVERRIDE_FILE).execute();
 			result = rFile.fileId();
         } catch (IOException | ApiError e) {
         	e.printStackTrace();
@@ -131,8 +179,7 @@ public class PCloudUploader {
 				}
 			}
 			long parentID = recursiveCreateFolder(apiClient, folder.getParent());
-			// https://github.com/pCloud/pcloud-sdk-java/issues/29
-			RemoteFolder newFolder = apiClient.createFolder(rPath(folder)).execute();
+			RemoteFolder newFolder = apiClient.createFolder(parentID, folder.getFileName().toString()).execute();
 			return newFolder.folderId();
 		} catch (IOException | ApiError e) {
 			throw new RuntimeException("Error creating folder '"+folder+"': "+e.toString(), e);
@@ -140,7 +187,7 @@ public class PCloudUploader {
 	}
 
 	
-	private String rPath(Path folder) {
+	public static String rPath(Path folder) {
 		String result = folder.toString().replace('\\', '/');
 		if (!result.startsWith("/")) {
 			result = "/"+result;
